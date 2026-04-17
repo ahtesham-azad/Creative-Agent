@@ -12,5 +12,5 @@ export interface AnalysisResult {
 }
 
 export interface ReferenceResult {
-  games: ReferenceGame[];
+  games: { id: string; title: string }[];
 }
