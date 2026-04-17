@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Search, Trash2, Copy, Sparkles, ExternalLink, Loader2 } from 'lucide-react';
 import { searchGames, generateDNALockedPrompts } from '../services/gemini';
 import { ReferenceGame, AnalysisResult } from '../types';
-import PromptCard from './PromptCard';
+import { PromptCard } from './PromptCard';
 
 export default function ResearchTab() {
   const [keyword, setKeyword] = useState('');
