@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Search, Trash2, Copy, Sparkles, ExternalLink, Loader2 } from 'lucide-react';
-import { searchGames } from '../services/gemini';
-import { generateDNALockedPrompts } from '../services/dnaLocked';
+import { searchGames, generateDNALockedPrompts } from '../services/gemini';
 import { ReferenceGame, AnalysisResult } from '../types';
 import PromptCard from './PromptCard';
 
