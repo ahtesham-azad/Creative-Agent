@@ -1,280 +1,181 @@
-import { useState } from 'react';
-import {
-  Search,
-  Sparkles,
-  ExternalLink,
-  AlertTriangle,
-  Loader2,
-  ChevronRight,
-  RefreshCw,
-  BookOpen,
-} from 'lucide-react';
-import { fetchReferenceGames } from '../services/gemini';
+import React, { useState } from 'react';
+import { Search, Trash2, Copy, Sparkles, ExternalLink, Loader2 } from 'lucide-react';
+import { searchGames } from '../services/gemini';
 import { generateDNALockedPrompts } from '../services/dnaLocked';
-import { PromptCard } from './PromptCard';
-import { ReferencesDrawer } from './ReferencesDrawer';
-import { ReferenceGame } from '../types';
+import { ReferenceGame, AnalysisResult } from '../types';
+import PromptCard from './PromptCard';
 
-interface ResearchTabProps {
-  apiKey: string;
-  onGoToSettings: () => void;
-}
-
-export function ResearchTab({ apiKey, onGoToSettings }: ResearchTabProps) {
+export default function ResearchTab() {
   const [keyword, setKeyword] = useState('');
-  const [prompts, setPrompts] = useState<string[]>([]);
-  const [referenceGames, setReferenceGames] = useState<ReferenceGame[]>([]);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<'phase1' | 'phase2'>('phase1');
+  const [references, setReferences] = useState<ReferenceGame[]>([]);
+  const [prompts, setPrompts] = useState<{ id: string; text: string }[]>([]);
+  const [loading, setLoading] = useState({ search: false, generating: false });
 
-  const handleFetchReferences = async () => {
-    if (!apiKey) {
-      setError('Please add your Gemini API key in Settings first.');
-      return;
-    }
+  // STEP 1: Handle Search
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!keyword.trim()) return;
 
-    setLoading(true);
-    setError(null);
-    setPrompts([]);
-    setReferenceGames([]);
-
+    setLoading(prev => ({ ...prev, search: true }));
     try {
-      const games = await fetchReferenceGames(keyword.trim(), apiKey);
-      setReferenceGames(games);
-      setPhase('phase1');
-      setDrawerOpen(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
+      const results = await searchGames(keyword);
+      setReferences(results);
+      setPrompts([]); // Reset prompts for new search
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Search failed');
     } finally {
-      setLoading(false);
+      setLoading(prev => ({ ...prev, search: false }));
     }
   };
 
-  const handleDeleteGame = (id: string) => {
-    setReferenceGames(referenceGames.filter((g) => g.id !== id));
-  };
+  // STEP 2: Handle Generation
+  const handleGenerate = async () => {
+    if (references.length === 0) return;
 
-  const handleAddGame = (title: string, url: string) => {
-    const newGame: ReferenceGame = {
-      id: `custom-${Date.now()}`,
-      title,
-      url,
-    };
-    setReferenceGames([...referenceGames, newGame]);
-  };
-
-  const handleConfirmStyles = async () => {
-    if (phase === 'phase1') {
-      setPhase('phase2');
-    } else {
-      if (referenceGames.length === 0) {
-        setError('Please add at least one reference game');
-        return;
-      }
-
-      setLoading(true);
-      setError(null);
-
-      try {
-        const result = await generateDNALockedPrompts(keyword.trim(), referenceGames, apiKey);
-        setPrompts(result.prompts);
-        setDrawerOpen(false);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
-      } finally {
-        setLoading(false);
-      }
+    setLoading(prev => ({ ...prev, generating: true }));
+    try {
+      const result = await generateDNALockedPrompts(keyword, references);
+      const formattedPrompts = result.prompts.map((text, index) => ({
+        id: `prompt-${index}`,
+        text
+      }));
+      setPrompts(formattedPrompts);
+      
+      // Smooth scroll to results
+      setTimeout(() => {
+        document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Generation failed');
+    } finally {
+      setLoading(prev => ({ ...prev, generating: false }));
     }
   };
 
-  const handleGenerate = () => {
-    prompts.forEach((prompt) => {
-      const encoded = encodeURIComponent(prompt);
-      window.open(`https://gemini.google.com/app?q=${encoded}`, '_blank');
-    });
+  const removeReference = (id: string) => {
+    setReferences(prev => prev.filter(r => r.id !== id));
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !loading && prompts.length === 0) {
-      handleFetchReferences();
-    }
+  const copyAll = () => {
+    const text = prompts.map(p => p.text).join('\n\n---\n\n');
+    navigator.clipboard.writeText(text);
+    alert('All 10 prompts copied to clipboard!');
   };
 
   return (
-    <>
-      <div className="max-w-3xl mx-auto">
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-white mb-2">Genre Research</h2>
-          <p className="text-slate-400">
-            Enter a game genre to find reference games and generate ASO-optimized 3D screenshot prompts.
-          </p>
-        </div>
-
-        {prompts.length === 0 && (
-          <>
-            <div className="relative mb-4">
-              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                <Search className="w-5 h-5 text-slate-500" />
-              </div>
-              <input
-                type="text"
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="e.g. Battle Royale, Tower Defense, Racing, RPG, Idle Clicker..."
-                className="w-full bg-slate-800/60 border border-slate-700 rounded-xl pl-12 pr-36 py-4 text-white placeholder-slate-600 text-base focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 transition-colors"
-              />
-              <button
-                onClick={handleFetchReferences}
-                disabled={loading || !keyword.trim()}
-                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center gap-2 px-4 py-2.5 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed text-slate-900 font-semibold text-sm rounded-lg transition-all duration-200"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Fetching
-                  </>
-                ) : (
-                  <>
-                    <BookOpen className="w-4 h-4" />
-                    Find References
-                  </>
-                )}
-              </button>
-            </div>
-
-            {!apiKey && (
-              <div className="mb-6 flex items-center gap-3 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3">
-                <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                <p className="text-amber-300 text-sm flex-1">No API key configured.</p>
-                <button
-                  onClick={onGoToSettings}
-                  className="inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 font-medium transition-colors"
-                >
-                  Add Key <ChevronRight className="w-3 h-3" />
-                </button>
-              </div>
-            )}
-
-            {error && (
-              <div className="mb-6 flex items-start gap-3 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
-                <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-red-300 text-sm">{error}</p>
-                </div>
-                <button
-                  onClick={() => setError(null)}
-                  className="text-red-400/60 hover:text-red-300 transition-colors text-xs"
-                >
-                  Dismiss
-                </button>
-              </div>
-            )}
-
-            {loading && (
-              <div className="flex flex-col items-center justify-center py-20 gap-4">
-                <div className="relative">
-                  <div className="w-14 h-14 rounded-full border-2 border-slate-700"></div>
-                  <div className="absolute inset-0 w-14 h-14 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin"></div>
-                </div>
-                <div className="text-center">
-                  <p className="text-slate-300 font-medium">Finding top {keyword} games...</p>
-                  <p className="text-slate-500 text-sm mt-1">Researching Play Store data</p>
-                </div>
-              </div>
-            )}
-
-            {!loading && (
-              <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
-                <div className="w-16 h-16 rounded-2xl bg-slate-800/60 border border-slate-700/50 flex items-center justify-center">
-                  <Search className="w-7 h-7 text-slate-600" />
-                </div>
-                <div>
-                  <p className="text-slate-400 font-medium">Enter a genre to get started</p>
-                  <p className="text-slate-600 text-sm mt-1 max-w-xs">
-                    Find reference games and generate optimized screenshot prompts.
-                  </p>
-                </div>
-                <div className="flex flex-wrap justify-center gap-2 mt-2">
-                  {['Battle Royale', 'Tower Defense', 'Idle RPG', 'Racing', 'Puzzle', 'MOBA'].map((g) => (
-                    <button
-                      key={g}
-                      onClick={() => setKeyword(g)}
-                      className="text-xs text-slate-500 hover:text-cyan-400 bg-slate-800/60 hover:border-cyan-500/30 border border-slate-700/50 px-3 py-1.5 rounded-full transition-all duration-150"
-                    >
-                      {g}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {prompts.length > 0 && (
-          <div className="pb-32">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-cyan-400" />
-                <span className="text-slate-300 font-semibold">Master Blueprints</span>
-                <span className="bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-bold px-2 py-0.5 rounded-full">
-                  {prompts.length} Prompts
-                </span>
-              </div>
-              <button
-                onClick={() => {
-                  setPrompts([]);
-                  setKeyword('');
-                  setReferenceGames([]);
-                }}
-                className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                New Search
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {prompts.map((prompt, i) => (
-                <PromptCard key={i} index={i + 1} prompt={prompt} />
-              ))}
-            </div>
-
-            <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-slate-950 via-slate-900/98 to-transparent pt-6 pb-6">
-              <div className="max-w-3xl mx-auto px-4">
-                <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-3 mb-3 flex items-start gap-3">
-                  <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-amber-300 text-xs leading-relaxed">
-                    Allow popups in your browser to generate all images at once. Each prompt will open in a new tab.
-                  </p>
-                </div>
-
-                <button
-                  onClick={handleGenerate}
-                  className="w-full inline-flex items-center justify-center gap-3 px-6 py-3.5 bg-cyan-500 hover:bg-cyan-400 text-slate-900 font-bold text-base rounded-xl transition-all duration-200 shadow-lg shadow-cyan-500/20 hover:shadow-cyan-400/30 hover:scale-[1.01] active:scale-[0.99]"
-                >
-                  <Sparkles className="w-5 h-5" />
-                  Generate All Images
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+    <div className="max-w-5xl mx-auto space-y-10 pb-20 px-4">
+      {/* HEADER SECTION */}
+      <div className="text-center pt-8">
+        <h1 className="text-4xl font-black text-white mb-2 italic uppercase tracking-tighter">
+          3D Creative Factory
+        </h1>
+        <p className="text-slate-400">Transform competitor DNA into high-conversion 3D engine prompts.</p>
       </div>
 
-      <ReferencesDrawer
-        isOpen={drawerOpen}
-        games={referenceGames}
-        onClose={() => setDrawerOpen(false)}
-        onDeleteGame={handleDeleteGame}
-        onAddGame={handleAddGame}
-        onConfirmStyles={handleConfirmStyles}
-        isLoading={loading}
-        phase={phase}
-      />
-    </>
+      {/* STEP 1: SEARCH */}
+      <section className="bg-slate-900/50 p-8 rounded-2xl border border-slate-800 shadow-xl">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="bg-blue-600 p-2 rounded-lg">
+            <Search size={20} className="text-white" />
+          </div>
+          <h2 className="text-xl font-bold text-white">Step 1: Find Competitors</h2>
+        </div>
+        
+        <form onSubmit={handleSearch} className="flex gap-3">
+          <input
+            type="text"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            placeholder="e.g., Sniper Ghost Shooter, Car Parking 3D..."
+            className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+          />
+          <button
+            type="submit"
+            disabled={loading.search}
+            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-8 py-3 rounded-xl font-bold flex items-center gap-2 transition-all"
+          >
+            {loading.search ? <Loader2 className="animate-spin" /> : 'Search'}
+          </button>
+        </form>
+      </section>
+
+      {/* STEP 2: REFERENCE GRID */}
+      {references.length > 0 && (
+        <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="flex justify-between items-end mb-6">
+            <div className="flex items-center gap-3">
+              <div className="bg-purple-600 p-2 rounded-lg">
+                <Sparkles size={20} className="text-white" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white">Step 2: Curate Visual DNA</h2>
+                <p className="text-sm text-slate-400">Delete styles that don't match your target 3D aesthetic.</p>
+              </div>
+            </div>
+            
+            <button
+              onClick={handleGenerate}
+              disabled={loading.generating}
+              className="bg-green-600 hover:bg-green-500 disabled:opacity-50 px-8 py-4 rounded-xl font-black text-lg uppercase tracking-wider flex items-center gap-3 shadow-lg shadow-green-900/20 transition-all"
+            >
+              {loading.generating ? (
+                <>
+                  <Loader2 className="animate-spin" />
+                  Analyzing DNA...
+                </>
+              ) : (
+                'Build 10 Visual Prompts'
+              )}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {references.map((game) => (
+              <div key={game.id} className="group relative bg-slate-900 border border-slate-800 p-4 rounded-xl flex items-center justify-between hover:border-slate-600 transition-all">
+                <div className="flex flex-col">
+                  <span className="text-white font-bold truncate max-w-[250px]">{game.title}</span>
+                  <a 
+                    href={game.url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-400 flex items-center gap-1 hover:underline mt-1"
+                  >
+                    Check Style <ExternalLink size={10} />
+                  </a>
+                </div>
+                <button
+                  onClick={() => removeReference(game.id)}
+                  className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
+                >
+                  <Trash2 size={18} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* STEP 3: OUTPUT SECTION */}
+      {prompts.length > 0 && (
+        <section id="results-section" className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
+          <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+            <h2 className="text-2xl font-black text-white uppercase italic">Step 3: Screenshot Prompts</h2>
+            <button
+              onClick={copyAll}
+              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-lg text-sm border border-slate-700 transition-all"
+            >
+              <Copy size={16} />
+              Copy All 10
+            </button>
+          </div>
+
+          <div className="grid gap-6">
+            {prompts.map((prompt) => (
+              <PromptCard key={prompt.id} prompt={prompt} />
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
   );
 }
