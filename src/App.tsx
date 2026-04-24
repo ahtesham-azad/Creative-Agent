@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { SettingsTab } from './components/SettingsTab';
-import { ResearchTab } from './components/ResearchTab';
+import ResearchTab from './components/ResearchTab';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { ActiveTab } from './types';
 

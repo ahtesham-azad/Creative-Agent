@@ -4,7 +4,7 @@ import { searchGames, generateDNALockedPrompts } from '../services/gemini';
 import { ReferenceGame, AnalysisResult } from '../types';
 import { PromptCard } from './PromptCard';
 
-export default function ResearchTab() {
+export function ResearchTab() {
   const [keyword, setKeyword] = useState('');
   const [references, setReferences] = useState<ReferenceGame[]>([]);
   const [prompts, setPrompts] = useState<{ id: string; text: string }[]>([]);
