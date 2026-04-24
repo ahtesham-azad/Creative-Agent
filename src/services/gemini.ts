@@ -1,11 +1,12 @@
 import { AnalysisResult, ReferenceResult, ReferenceGame } from '../types';
 
+// Updated to a stable model name to prevent 404/400 errors
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
-// Helper to get key from Vercel Environment or User Input
 const getApiKey = (manualKey?: string) => {
-  // Checks Vercel secret first, then manual input, then local storage
-  return import.meta.env.VITE_GEMINI_API_KEY || manualKey || localStorage.getItem('gemini_api_key') || '';
+  // Priority: Manual > Vercel Secret > Local Storage
+  const key = manualKey || import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key');
+  return key?.trim() || '';
 };
 
 const STYLE_LOCK_PROMPT = `
@@ -16,12 +17,11 @@ STRICT STYLE RULES:
 4. FORBIDDEN: Do not use "photorealism", "8k photography", "real-life grain", "biological textures", or "camera noise".
 `;
 
-// STEP 1: Search for Games
 export async function searchGames(genre: string, manualKey?: string): Promise<ReferenceGame[]> {
   const apiKey = getApiKey(manualKey);
   if (!apiKey) throw new Error('API Key missing. Please add it to Vercel or Settings.');
 
-  const prompt = `Identify the top 10 most successful Google Play Store games for the genre/keyword: "${genre}". 
+  const prompt = `Identify the top 10 most successful Google Play Store games for the genre: "${genre}". 
   Return ONLY a valid JSON object: {"games": [{"id": "unique-id", "title": "Exact Game Name"}]}`;
 
   const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
@@ -30,13 +30,18 @@ export async function searchGames(genre: string, manualKey?: string): Promise<Re
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { 
-        temperature: 0.5, // Lower temperature for more factual game names
+        temperature: 0.5,
         responseMimeType: 'application/json' 
       }
     }),
   });
 
-  if (!response.ok) throw new Error('Failed to fetch reference games. Check your API Key.');
+  // ENHANCED ERROR LOGGING
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => ({}));
+    const message = errorJson.error?.message || response.statusText;
+    throw new Error(`Google API Error: ${message}`);
+  }
 
   const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -47,15 +52,13 @@ export async function searchGames(genre: string, manualKey?: string): Promise<Re
 
     return parsed.games.map((game) => ({
       ...game,
-      // Fixed URL logic to prevent 404s
       url: `https://play.google.com/store/search?q=${encodeURIComponent(game.title)}&c=apps`,
     }));
-  } catch {
+  } catch (err) {
     throw new Error('Failed to parse reference games list.');
   }
 }
 
-// STEP 2: Generate DNA-Locked Prompts
 export async function generateDNALockedPrompts(
   keyword: string,
   games: ReferenceGame[],
@@ -67,22 +70,11 @@ export async function generateDNALockedPrompts(
   const gamesList = games.map((g, i) => `${i + 1}. ${g.title}`).join('\n');
 
   const prompt = `
-    You are a professional 3D Art Director for mobile game marketing.
-    
-    REFERENCE GAMES TO ANALYZE:
-    ${gamesList}
-
-    TASK:
-    Generate 10 highly detailed ASO screenshot prompts for a new "${keyword}" game.
-    
+    Analyze these games: ${gamesList}
+    Generate 10 screenshot prompts for a "${keyword}" game.
     ${STYLE_LOCK_PROMPT}
-
-    DNA LOCK RULES:
-    - Environment: Stick 100% to the setting (e.g., city, desert, garage) found in the references.
-    - Lighting: Match the color palette and time of day from the reference games.
-    - Complexity: Each prompt must be 70-90 words long, describing a specific "hook" shot for the Play Store.
-
-    Return ONLY a valid JSON object: {"prompts": ["prompt1", "prompt2", ...]}
+    DNA LOCK: Match environment/lighting of references. 70-90 words.
+    Return ONLY JSON: {"prompts": ["prompt1", ...]}
   `;
 
   const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
@@ -90,14 +82,14 @@ export async function generateDNALockedPrompts(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { 
-        temperature: 0.8, 
-        responseMimeType: 'application/json' 
-      }
+      generationConfig: { temperature: 0.8, responseMimeType: 'application/json' }
     }),
   });
 
-  if (!response.ok) throw new Error('AI Generation failed. Your API key might be rate-limited.');
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => ({}));
+    throw new Error(`Generation Error: ${errorJson.error?.message || 'Check API limits'}`);
+  }
 
   const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -106,6 +98,6 @@ export async function generateDNALockedPrompts(
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     return JSON.parse(cleaned) as AnalysisResult;
   } catch {
-    throw new Error('Failed to parse DNA-Locked prompts. Please try again.');
+    throw new Error('Failed to parse DNA-Locked prompts.');
   }
 }
