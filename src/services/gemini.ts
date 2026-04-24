@@ -1,12 +1,15 @@
 import { AnalysisResult, ReferenceResult, ReferenceGame } from '../types';
 
-// Updated to a stable model name to prevent 404/400 errors
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+// Using stable v1 endpoint
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 
 const getApiKey = (manualKey?: string) => {
-  // Priority: Manual > Vercel Secret > Local Storage
-  const key = manualKey || import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key');
-  return key?.trim() || '';
+  return manualKey || import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '';
+};
+
+// Helper to clean JSON strings from AI responses
+const cleanJson = (text: string) => {
+  return text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 };
 
 const STYLE_LOCK_PROMPT = `
@@ -19,7 +22,7 @@ STRICT STYLE RULES:
 
 export async function searchGames(genre: string, manualKey?: string): Promise<ReferenceGame[]> {
   const apiKey = getApiKey(manualKey);
-  if (!apiKey) throw new Error('API Key missing. Please add it to Vercel or Settings.');
+  if (!apiKey) throw new Error('API Key missing.');
 
   const prompt = `Identify the top 10 most successful Google Play Store games for the genre: "${genre}". 
   Return ONLY a valid JSON object: {"games": [{"id": "unique-id", "title": "Exact Game Name"}]}`;
@@ -29,33 +32,27 @@ export async function searchGames(genre: string, manualKey?: string): Promise<Re
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { 
-        temperature: 0.5,
-        responseMimeType: 'application/json' 
-      }
+      // REMOVED responseMimeType to fix "Unknown name" error
+      generationConfig: { temperature: 0.5 }
     }),
   });
 
-  // ENHANCED ERROR LOGGING
   if (!response.ok) {
     const errorJson = await response.json().catch(() => ({}));
-    const message = errorJson.error?.message || response.statusText;
-    throw new Error(`Google API Error: ${message}`);
+    throw new Error(`Google API Error: ${errorJson.error?.message || response.statusText}`);
   }
 
   const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   
   try {
-    const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const parsed = JSON.parse(cleaned) as ReferenceResult;
-
+    const parsed = JSON.parse(cleanJson(text)) as ReferenceResult;
     return parsed.games.map((game) => ({
       ...game,
       url: `https://play.google.com/store/search?q=${encodeURIComponent(game.title)}&c=apps`,
     }));
   } catch (err) {
-    throw new Error('Failed to parse reference games list.');
+    throw new Error('Failed to parse games list. Please try searching again.');
   }
 }
 
@@ -68,21 +65,14 @@ export async function generateDNALockedPrompts(
   if (!apiKey) throw new Error('API Key missing.');
 
   const gamesList = games.map((g, i) => `${i + 1}. ${g.title}`).join('\n');
-
-  const prompt = `
-    Analyze these games: ${gamesList}
-    Generate 10 screenshot prompts for a "${keyword}" game.
-    ${STYLE_LOCK_PROMPT}
-    DNA LOCK: Match environment/lighting of references. 70-90 words.
-    Return ONLY JSON: {"prompts": ["prompt1", ...]}
-  `;
+  const prompt = `Analyze these games: ${gamesList}\nGenerate 10 prompts for a "${keyword}" game.\n${STYLE_LOCK_PROMPT}\nReturn ONLY JSON: {"prompts": ["prompt1", ...]}`;
 
   const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.8, responseMimeType: 'application/json' }
+      generationConfig: { temperature: 0.8 }
     }),
   });
 
@@ -95,8 +85,7 @@ export async function generateDNALockedPrompts(
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   
   try {
-    const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    return JSON.parse(cleaned) as AnalysisResult;
+    return JSON.parse(cleanJson(text)) as AnalysisResult;
   } catch {
     throw new Error('Failed to parse DNA-Locked prompts.');
   }
