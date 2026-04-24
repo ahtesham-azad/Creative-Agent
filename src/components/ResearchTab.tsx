@@ -23,7 +23,7 @@ export default function ResearchTab() {
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Search failed');
     } finally {
-      setLoading(prev => ({ ...prev, search: false }))
+      setLoading(prev => ({ ...prev, search: false }));
     }
   };
 
