@@ -8,6 +8,7 @@ import { PromptCard } from './PromptCard';
 export default function ResearchTab() {
   const [keyword, setKeyword] = useState('');
   const [references, setReferences] = useState<ReferenceGame[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [prompts, setPrompts] = useState<{ id: string; text: string }[]>([]);
   const [loading, setLoading] = useState({ search: false, generating: false });
 
@@ -31,8 +32,9 @@ export default function ResearchTab() {
   // STEP 2: Handle Generation
   const handleGenerate = async () => {
     if (references.length === 0) return;
-
+  
     setLoading(prev => ({ ...prev, generating: true }));
+    setError(null); // clear previous error
     try {
       const result = await generateDNALockedPrompts(keyword, references);
       const formattedPrompts = result.prompts.map((text, index) => ({
@@ -40,13 +42,11 @@ export default function ResearchTab() {
         text
       }));
       setPrompts(formattedPrompts);
-      
-      // Smooth scroll to results
       setTimeout(() => {
         document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
       }, 100);
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Generation failed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Generation failed. Please try again.');
     } finally {
       setLoading(prev => ({ ...prev, generating: false }));
     }
@@ -63,7 +63,12 @@ export default function ResearchTab() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-10 pb-20 px-4">
+    <div className="max-w-5xl mx-auto space-y-10 pb-20 px-4"> {error && (
+      <div className="bg-red-900/50 border border-red-700 text-red-300 px-6 py-4 rounded-xl flex items-center gap-3">
+        <span className="text-xl">⚠️</span>
+        <span>{error}</span>
+      </div>
+    )}
       {/* HEADER SECTION */}
       <div className="text-center pt-8">
         <h1 className="text-4xl font-black text-white mb-2 italic uppercase tracking-tighter">
