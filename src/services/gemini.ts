@@ -1,7 +1,7 @@
 import { AnalysisResult, ReferenceResult, ReferenceGame } from '../types';
 
 // Using stable v1 endpoint
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-3-flash:generateContent';
 
 const getApiKey = (manualKey?: string) => {
   return manualKey || import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '';
