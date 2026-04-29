@@ -12,7 +12,13 @@ export function SettingsTab({ apiKey, onApiKeyChange }: SettingsTabProps) {
   const [saved, setSaved] = useState(false);
 
   const handleSave = () => {
-    onApiKeyChange(inputValue.trim());
+    const trimmedKey = inputValue.trim();
+    // 1. Update the parent state
+    onApiKeyChange(trimmedKey);
+    
+    // 2. Save to localStorage for the gemini.ts service to find
+    localStorage.setItem('gemini_api_key', trimmedKey);
+    
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
