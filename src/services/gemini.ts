@@ -86,15 +86,24 @@ Requirements:
 2. Maintain a "stylized semi-realistic" aesthetic.
 3. Include lighting descriptions (Cinematic, Rim Lighting, Volumetric).
 
-Return ONLY a JSON object, no markdown:
-{"prompts": ["prompt 1...", "prompt 2...", ..., "prompt 10..."]}`;
+Return ONLY a JSON object, no markdown, no explanation:
+{"prompts": ["prompt 1...", "prompt 2...", "prompt 3...", "prompt 4...", "prompt 5...", "prompt 6...", "prompt 7...", "prompt 8...", "prompt 9...", "prompt 10..."]}`;
 
+  // Use the shared fallback chain — NOT a hardcoded model
   const text = await getAIResponse(apiKey, prompt, 0.8);
 
   try {
-    const cleaned = text.replace(/```json\n?|```/g, '').trim();
-    return JSON.parse(cleaned) as AnalysisResult;
-  } catch {
+    // Strip thinking tags that gemini-2.5 sometimes prepends
+    const stripped = text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+    const cleaned = stripped.replace(/```json\n?|```/g, '').trim();
+    
+    // Find the JSON object in case there's any surrounding text
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON object found in response');
+    
+    return JSON.parse(jsonMatch[0]) as AnalysisResult;
+  } catch (err) {
+    console.error('Parse failed. Raw response:', text);
     throw new Error('The AI returned an invalid format. Please try again.');
   }
 }
