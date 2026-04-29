@@ -56,21 +56,63 @@ async function raceModels(apiKey: string, prompt: string): Promise<string> {
 
 export async function searchGames(genre: string, manualKey?: string): Promise<ReferenceGame[]> {
   const apiKey = getApiKey(manualKey);
-  if (!apiKey) throw new Error('API Key missing. Please check Settings.');
+  if (!apiKey) throw new Error('API Key missing.');
 
-  const prompt = `Return ONLY a valid JSON object: {"games": [{"id": "1", "title": "Game Name"}]} for the genre: "${genre}"`;
+  // Using gemini-2.5-flash on the stable v1 endpoint as seen in your logs
+  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
-  const text = await raceModels(apiKey, prompt);
-  
+  const prompt = `Return a JSON object containing a list of 10 popular Google Play games for the genre: "${genre}". 
+  The response MUST be valid JSON in this exact format:
+  {
+    "games": [
+      {"id": "1", "title": "Exact Game Name"},
+      {"id": "2", "title": "Exact Game Name"}
+    ]
+  }
+  Do not include any text before or after the JSON.`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      // Force the model to be more predictable
+      generationConfig: { 
+        temperature: 0.1,
+        topP: 0.1
+      }
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'Server is overloaded. Try again in 5 seconds.');
+  }
+
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  // DEBUG: Look at your browser console (F12) to see this output!
+  console.log("Raw AI Response:", text);
+
   try {
-    const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    // Aggressive cleaning to handle markdown code blocks
+    const cleaned = text.replace(/```json\n?|```/g, '').trim();
     const parsed = JSON.parse(cleaned) as ReferenceResult;
+    
+    if (!parsed.games || parsed.games.length === 0) {
+       throw new Error("AI returned an empty list.");
+    }
+
     return parsed.games.map((game) => ({
-      ...game,
+      id: game.id,
+      title: game.title,
+      // Fixed URL builder to ensure the link works
       url: `https://play.google.com/store/search?q=${encodeURIComponent(game.title)}&c=apps`,
     }));
   } catch (err) {
-    throw new Error('Could not parse game list. The AI returned an invalid format.');
+    console.error("JSON Parsing Error:", err);
+    throw new Error('The AI gave a messy response. Please click Search again.');
   }
 }
 
