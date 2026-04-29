@@ -1,10 +1,11 @@
 import { AnalysisResult, ReferenceResult, ReferenceGame } from '../types';
 
-// Using the absolute standard model identifier for v1 stability
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent';
+// Using v1beta + the "latest" alias is the most reliable way to avoid "Not Found" errors
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
 
 const getApiKey = (manualKey?: string) => {
-  return manualKey || import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '';
+  const key = manualKey || import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key');
+  return key?.trim() || '';
 };
 
 const STYLE_LOCK_PROMPT = `
@@ -12,14 +13,13 @@ STRICT STYLE RULES:
 1. PREFIX: Every prompt MUST start with "[3D Mobile Game Render]".
 2. FOOTER: Every prompt MUST end with "Rendered in a 3D engine style, absolutely no photorealism, game asset aesthetic only."
 3. VISUALS: Use "semi-realism", "Smooth high-poly assets", "Baked volumetric lighting", and "High-fidelity CGI".
-4. FORBIDDEN: Do not use "photorealism", "8k photography", "real-life grain", "biological textures", or "camera noise".
 `;
 
 export async function searchGames(genre: string, manualKey?: string): Promise<ReferenceGame[]> {
   const apiKey = getApiKey(manualKey);
-  if (!apiKey) throw new Error('API Key missing.');
+  if (!apiKey) throw new Error('API Key missing. Please check Vercel environment variables.');
 
-  const prompt = `Return ONLY a valid JSON object of the top 10 successful Google Play Store games for: "${genre}". 
+  const prompt = `Return ONLY a valid JSON object listing 10 top Google Play games for: "${genre}". 
   Format: {"games": [{"id": "1", "title": "Game Name"}]}`;
 
   const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
@@ -27,7 +27,11 @@ export async function searchGames(genre: string, manualKey?: string): Promise<Re
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.5 }
+      // Note: responseMimeType is kept here as v1beta supports it
+      generationConfig: { 
+        temperature: 0.5,
+        responseMimeType: "application/json" 
+      }
     }),
   });
 
@@ -47,7 +51,7 @@ export async function searchGames(genre: string, manualKey?: string): Promise<Re
       url: `https://play.google.com/store/search?q=${encodeURIComponent(game.title)}&c=apps`,
     }));
   } catch (err) {
-    throw new Error('Failed to parse reference games list.');
+    throw new Error('Failed to parse response. Please try again.');
   }
 }
 
@@ -60,14 +64,17 @@ export async function generateDNALockedPrompts(
   if (!apiKey) throw new Error('API Key missing.');
 
   const gamesList = games.map((g, i) => `${i + 1}. ${g.title}`).join('\n');
-  const prompt = `Analyze: ${gamesList}\nGenerate 10 screenshot prompts for a "${keyword}" game.\n${STYLE_LOCK_PROMPT}\nReturn ONLY JSON: {"prompts": ["prompt1", ...]}`;
+  const prompt = `Reference Games:\n${gamesList}\n\nTask: Generate 10 marketing prompts for a "${keyword}" game.\n${STYLE_LOCK_PROMPT}\nReturn ONLY JSON: {"prompts": ["prompt1", ...]}`;
 
   const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.8 }
+      generationConfig: { 
+        temperature: 0.8,
+        responseMimeType: "application/json" 
+      }
     }),
   });
 
@@ -83,6 +90,6 @@ export async function generateDNALockedPrompts(
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     return JSON.parse(cleaned) as AnalysisResult;
   } catch {
-    throw new Error('Failed to parse prompts.');
+    throw new Error('Failed to parse DNA-Locked prompts.');
   }
 }
